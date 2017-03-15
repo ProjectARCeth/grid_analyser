@@ -1,0 +1,34 @@
+<?xml version="1.0"?>
+<package>
+  <name>grid_analyser</name>
+  <version>0.0.0</version>
+  <description>The grid_analyser package</description>
+
+  <maintainer email="moritz@todo.todo">moritz</maintainer>
+
+
+  <license>TODO</license>
+
+
+  <buildtool_depend>catkin</buildtool_depend>
+  <build_depend>roscpp</build_depend>
+  <build_depend>std_msgs</build_depend>
+  <build_depend>nav_msgs</build_depend>
+  <build_depend>catkin_simple</build_depend>
+  <buildtool_depend>catkin_simple</buildtool_depend>
+  <build_depend>arc_tools</build_depend>
+
+  <run_depend>roscpp</run_depend>
+  <run_depend>std_msgs</run_depend>
+  <run_depend>nav_msgs</run_depend>
+  <run_depend>catkin_simple</run_depend>
+  <run_depend>ackermann_msgs</run_depend>
+  <run_depend>arc_tools</run_depend>
+
+
+  
+  <export>
+   
+
+  </export>
+</package>
