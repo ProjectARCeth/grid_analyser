@@ -44,6 +44,8 @@ public:
 	void publish_all();
 	//generates 2dimeensional state from posirion and orientation
 	//	arc_msgs::State generate2DState(const float x, const float y, const float alpha );
+	int indexOfDistanceFront(int i, float d);
+	float radiusOfInflation(int x, int y);
 	
 private:
 	//Ros-Constants:.
@@ -93,5 +95,7 @@ ros::Publisher path_pub_;
 	int crit_counter_;
 	//Bool that decides if state or grid callback is executed
 	bool jumper_;
+	//Braking velocity
+	float braking_distance_;
 	
 };

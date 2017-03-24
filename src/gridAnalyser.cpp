@@ -1,31 +1,42 @@
 #include "../include/gridAnalyser/gridAnalyser.hpp"
 
 float QUEUE_LENGTH=10;
-float FOS_DANGERGRID=1.5;
+float FOS_DANGERGRID=1;
 float FOS_BRAKING_DISTANCE=2;
 float TOTAL_WIDTH=1.6;
 float DISTANCE_LASER_REARAXIS=1;
 float NUMBER_OF_EMERGENCY_CELLS=5;
+float CRITICAL_OBSTACLE_DISTANCE=2;
+float LENGHT_CORRECTION_PATH_GRIDANALYSER=3;
+float K1_LAD_LASER=2;
+float K2_LAD_LASER=5;
 std::string STOP_LASER_TOPIC="laser_stop";
 std::string STATE_TOPIC="state";
 std::string OBSTACLE_MAP_TOPIC="gridmap";
 std::string DANGER_GRID_TOPIC="danger_grid";
 std::string OBSTACLE_DISTANCE_TOPIC="distance_to_obstacle";
 
+
 //Constructor
 gridAnalyser::gridAnalyser(const ros::NodeHandle &nh): nh_(nh)
 {
+	nh.getparam("/control/LENGHT_CORRECTION_PATH_GRIDANALYSER",LENGHT_CORRECTION_PATH_GRIDANALYSER);
+	nh.getparam("/control/NUMBER_OF_EMERGENCY_CELLS",NUMBER_OF_EMERGENCY_CELLS);
+	nh.getParam("/general/QUEUE_LENGTH",QUEUE_LENGTH);
 	nh.getParam("/erod/TOTAL_WIDTH",TOTAL_WIDTH);
 	nh.getParam("/safety/FOS_BRAKING_DISTANCE",FOS_BRAKING_DISTANCE);
 	nh.getParam("/safety/FOS_DANGERGRID",FOS_DANGERGRID);
-	nh.getParam("/erod/TOTAL_WIDTH",TOTAL_WIDTH);
-	nh.getParam("/erod/DISTANCE_LASER_REARAXIS",DISTANCE_LASER_REARAXIS);
-	nh.getParam("/topic/OBSTACEL_DISTANCE",OBSTACLE_DISTANCE_TOPIC);
+	nh.getParam("/erod/DISTANCE_LASER_REAR_AXIS",DISTANCE_LASER_REARAXIS);
+	nh.getParam("/safety/CRITICAL_OBSTACLE_DISTANCE",CRITICAL_OBSTACLE_DISTANCE );
+	nh.getParam("/topic/OBSTACLE_DISTANCE",OBSTACLE_DISTANCE_TOPIC);
 	nh.getParam("/topic/STATE",STATE_TOPIC);
 	nh.getParam("/topic/OBSTACLE_MAP",OBSTACLE_MAP_TOPIC);
 	nh.getParam("/topic/DANGER_GRID",DANGER_GRID_TOPIC);
-	nh.getParam("/topic/STOP_LASER",STOP_LASER_TOPIC);
-	
+	nh.getParam("/topic/LASER_STOP",STOP_LASER_TOPIC);
+	nh.getParam("/control/K1_LAD_LASER",K1_LAD_LASER);
+	nh.getParam("/control/K2_LAD_LASER",K2_LAD_LASER);
+
+
 	state_.pose.pose.position.x=0;
 	state_.pose.pose.position.y=0;
 	state_.pose.pose.position.z=0;
@@ -51,7 +62,7 @@ gridAnalyser::gridAnalyser(const ros::NodeHandle &nh): nh_(nh)
 	//Subscriber.
 	grid_map_sub_=nh_.subscribe(OBSTACLE_MAP_TOPIC, QUEUE_LENGTH, &gridAnalyser::getGridMap, this);
 	//Read path.
-	readPathFromTxt("/home/moritz/.ros/Paths/Berg_rauf.txt");
+	readPathFromTxt("/home/moritz/.ros/Paths/ObstacleDetection1_teach.txt");
 	std::cout<<"GRID ANALYSER: Constructor"<<std::endl;
 //Test
 geometry_msgs::Vector3 p;
@@ -61,6 +72,7 @@ std::cout<<sqrt(pow(5-1,2)+pow(6-3,2))<<std::endl;
 std::cout<<sqrt(pow(-36+(width_/2.0),2)+pow(383-(height_/2.0),2))*resolution_<<std::endl;
 /*
 */
+	std::cout<<convertIndex(2,-1)<<std::endl;
 }
 
 //Callback Function which processes incoming state
@@ -91,6 +103,7 @@ std::cout<<"Angular velocities: "<<state_.pose_diff.twist.angular.x<<" "<<state_
 	float x_path=path_.poses[state_.current_arrayposition].pose.position.x;
 	float y_path=path_.poses[state_.current_arrayposition].pose.position.y;
 	tracking_error_=sqrt(pow((x_now-x_path),2)+pow((y_now-y_path),2));
+	braking_distance_=pow(state_.pose_diff*3.6/10,2)/2*FOS_BRAKING_DISTANCE;	//Bremsweg mit Sicherheitsfaktor (FOS_BRAKING_DISTANCE) Gleichung aus internet
 	createDangerZone (nico_map_);
 	compareGrids();
 	publish_all();
@@ -135,16 +148,33 @@ void gridAnalyser::createDangerZone (const nav_msgs::OccupancyGrid grid_map)
 	tube_map_=grid_map;
 	for (int i=0;i<n_cells_;i++) tube_map_.data[i]=0;
 	//Inflate path
-	for(int i=state_.current_arrayposition; i<n_poses_path_; i++) inflate(gridIndexOfGlobalPoint(path_.poses[i].pose.position));
+	for(int i=state_.current_arrayposition; i<indexOfDistanceFront(state_.current_arrayposition,K2_LAD_LASER+K1_LAD_LASER*braking_distance_); i++) inflate(gridIndexOfGlobalPoint(path_.poses[i].pose.position));
 }
 
-//INFLATE XY
+//INFLATE XY----------------------------------------------------------------------------------------------------------------------------
 void gridAnalyser::inflate(int x, int y)
-{
-	if((x>0) && x<height_ && y<0 && (y>-width_))
+{	
+	//Displace less and less with increasing distance
+	float distance=sqrt( pow(y+(width_/2.0),2) + pow(x-(height_/2.0),2) )*resolution_; 
+	float displacement=tracking_error_*(1-distance/LENGHT_CORRECTION_PATH_GRIDANALYSER);
+	if(distance>LENGHT_CORRECTION_PATH_GRIDANALYSER) displacement=0;
+	if(displacement!=0)
 	{
-		float Radius_float=((TOTAL_WIDTH/2+tracking_error_)*FOS_DANGERGRID)/resolution_;
-		int R=round(Radius_float);
+		bool left=false;
+		if ( arc_tools::globalToLocal(path_.poses[state_.current_arrayposition].pose.position,state_).y >=0) left=true;
+		if (left) y-=round(tracking_error_*resolution_);
+		else y+=round(tracking_error_*resolution_);
+	}
+	//Choose radius
+	float Radius_float=((TOTAL_WIDTH/2)*FOS_DANGERGRID);
+	//Adapt radius
+/*	if(distance>braking_distance_&&distance<=2*braking_distance_) Radius_float*=1.5-0.5*distance/braking_distance_;
+	if(distance>2*braking_distance_) Radius_float*=0.5;
+	if(distance<=CRITICAL_OBSTACLE_DISTANCE) Radius_float=((TOTAL_WIDTH/2+tracking_error_/3)*FOS_DANGERGRID)/resolution_;
+*/
+	if((x>0) && x<height_ && y<0 && (y>-width_))
+	{	
+		int R=round(Radius_float)/resolution_;
 		for(int i=(x-R); i<=(x+R); i++)
 		{
 			for(int j=(y-R); j<=(y+R); j++)
@@ -232,14 +262,14 @@ geometry_msgs::Point N;
 	geometry_msgs::Point local_msg=arc_tools::globalToLocal(P,state_);
 	float x_local=local_msg.x;	//Translation von Nico gemacht von Laser zu rearaxis 
 	float y_local=local_msg.y;
-	if(	(y_local/resolution_<width_/2) && (y_local/resolution_>(-width_/2)) && 
-		(x_local/resolution_>-height_/2) && (x_local/resolution_<height_/2)  )
+	if(	(round(y_local/resolution_)<width_/2) && (round(y_local/resolution_)>(-width_/2)) && 
+		(round(x_local/resolution_)>-height_/2) && (round(x_local/resolution_)<height_/2)  )
 	{
       	n = round(round(-y_local/resolution_)+round(x_local/resolution_)*width_+width_/2+(height_/2)*width_);
 	} 
 	return n;
 }
-//""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
+
 
 //WHATTODO
 void gridAnalyser::whattodo(const int i)
@@ -248,13 +278,12 @@ void gridAnalyser::whattodo(const int i)
 	geometry_msgs::Vector3 p=convertIndex(i);
 	std::cout<<"Coordiantes: "<<p.x<<" "<<p.y<<std::endl;
 	float d=sqrt(pow(p.x-height_/2,2)+pow(-p.y-width_/2,2))*resolution_;	//Objektdistanz bezüglich gridMittelpunkt	
-	float v_abs=state_.pose_diff;//sqrt(pow(state_.pose_diff.twist.linear.x,2)+pow(state_.pose_diff.twist.linear.y,2));
 	obstacle_distance_=d;
 	std::cout<<"Distance: "<<d<<std::endl;
 
-	float braking_distance=pow(v_abs*3.6/10,2)/2*FOS_BRAKING_DISTANCE;	//Bremsweg mit Sicherheitsfaktor (FOS_BRAKING_DISTANCE) Gleichung aus internet
-	std::cout<<"Braking distance of v=  "<<v_abs<<" is: "<<braking_distance<<std::endl;
-		if(d<braking_distance)
+
+	std::cout<<"Braking distance of v=  "<<state_.pose_diff<<" is: "<<braking_distance_<<std::endl;
+		if(d<braking_distance_)
 		{
 			crit_counter_++;
 			if(crit_counter_>=NUMBER_OF_EMERGENCY_CELLS)
@@ -359,8 +388,26 @@ arc_msgs::State gridAnalyser::arc_tools::generate2DState(const float x, const fl
 
 */
 
+int gridAnalyser::indexOfDistanceFront(int i, float d)
+{
+	int j=i;
+	float l = 0;
+	while(l<d &&j<n_poses_path_-1)
+	{
+		l += sqrt(	pow(path_.poses[j+1].pose.position.x - path_.poses[j].pose.position.x,2)+
+				pow(path_.poses[j+1].pose.position.y - path_.poses[j].pose.position.y,2)+
+				pow(path_.poses[j+1].pose.position.z - path_.poses[j].pose.position.z,2));
+		if(j+1>n_poses_path_-1){std::cout<<"PURE PURSUIT: LAUFZEITFEHLER::indexOfDistanceFront"<<std::endl;}
+		j ++;
+	}
+	return j+1;
+}
 
+float gridAnalyser::radiusOfInflation(int x, int y)
+{
+	float radius;
 
-
+	return radius;
+}
 
 
