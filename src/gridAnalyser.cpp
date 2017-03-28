@@ -4,7 +4,7 @@ float QUEUE_LENGTH=10;
 float FOS_DANGERGRID=1;
 float FOS_BRAKING_DISTANCE=2;
 float TOTAL_WIDTH=1.6;
-float DISTANCE_LASER_REARAXIS=1;
+float DISTANCE_LASER_REAR_AXIS=1;
 float NUMBER_OF_EMERGENCY_CELLS=5;
 float CRITICAL_OBSTACLE_DISTANCE=2;
 float LENGHT_CORRECTION_PATH_GRIDANALYSER=3;
@@ -20,13 +20,13 @@ std::string OBSTACLE_DISTANCE_TOPIC="distance_to_obstacle";
 //Constructor
 gridAnalyser::gridAnalyser(const ros::NodeHandle &nh): nh_(nh)
 {
-	nh.getparam("/control/LENGHT_CORRECTION_PATH_GRIDANALYSER",LENGHT_CORRECTION_PATH_GRIDANALYSER);
-	nh.getparam("/control/NUMBER_OF_EMERGENCY_CELLS",NUMBER_OF_EMERGENCY_CELLS);
+	nh.getParam("/control/LENGHT_CORRECTION_PATH_GRIDANALYSER",LENGHT_CORRECTION_PATH_GRIDANALYSER);
+	nh.getParam("/control/NUMBER_OF_EMERGENCY_CELLS",NUMBER_OF_EMERGENCY_CELLS);
 	nh.getParam("/general/QUEUE_LENGTH",QUEUE_LENGTH);
 	nh.getParam("/erod/TOTAL_WIDTH",TOTAL_WIDTH);
 	nh.getParam("/safety/FOS_BRAKING_DISTANCE",FOS_BRAKING_DISTANCE);
 	nh.getParam("/safety/FOS_DANGERGRID",FOS_DANGERGRID);
-	nh.getParam("/erod/DISTANCE_LASER_REAR_AXIS",DISTANCE_LASER_REARAXIS);
+	nh.getParam("/erod/DISTANCE_LASER_REAR_AXIS",DISTANCE_LASER_REAR_AXIS);
 	nh.getParam("/safety/CRITICAL_OBSTACLE_DISTANCE",CRITICAL_OBSTACLE_DISTANCE );
 	nh.getParam("/topic/OBSTACLE_DISTANCE",OBSTACLE_DISTANCE_TOPIC);
 	nh.getParam("/topic/STATE",STATE_TOPIC);
@@ -64,15 +64,6 @@ gridAnalyser::gridAnalyser(const ros::NodeHandle &nh): nh_(nh)
 	//Read path.
 	readPathFromTxt("/home/moritz/.ros/Paths/ObstacleDetection1_teach.txt");
 	std::cout<<"GRID ANALYSER: Constructor"<<std::endl;
-//Test
-geometry_msgs::Vector3 p;
-p=convertIndex(110);
-std::cout<<"x-coord "<<convertIndex(130).x<<" y-coord "<<convertIndex(130).y<<std::endl;
-std::cout<<sqrt(pow(5-1,2)+pow(6-3,2))<<std::endl;
-std::cout<<sqrt(pow(-36+(width_/2.0),2)+pow(383-(height_/2.0),2))*resolution_<<std::endl;
-/*
-*/
-	std::cout<<convertIndex(2,-1)<<std::endl;
 }
 
 //Callback Function which processes incoming state
@@ -81,7 +72,7 @@ void gridAnalyser::getState (const arc_msgs::State::ConstPtr& arc_state)
 if(jumper_==false)
 {
 /*
-std::cout<<"Position: "<<arc_state->pose.pose.position.x<<" "<<arc_state->pose.pose.position.y<<" "<<arc_state->pose.pose.position.z<<std::endl;
+std::cout<<"Position: "<<_state->pose.pose.position.x<<" "<<arc_state->pose.pose.position.y<<" "<<arc_state->pose.pose.position.z<<std::endl;
 std::cout<<"Quatrnions: "<<arc_state->pose.pose.orientation.x<<" "<<arc_state->pose.pose.orientation.y<<" "<<arc_state->pose.pose.orientation.z<<" "<<arc_state->pose.pose.orientation.w<<std::endl;
 std::cout<<"Velocities: "<<arc_state->pose_diff.twist.linear.x<<" "<<arc_state->pose_diff.twist.linear.y<<" "<<arc_state->pose_diff.twist.linear.z<<std::endl;
 std::cout<<"Angular velocities: "<<arc_state->pose_diff.twist.angular.x<<" "<<arc_state->pose_diff.twist.angular.y<<" "<<arc_state->pose_diff.twist.angular.z<<std::endl;
@@ -97,7 +88,7 @@ std::cout<<"Velocities: "<<state_.pose_diff.twist.linear.x<<" "<<state_.pose_dif
 std::cout<<"Angular velocities: "<<state_.pose_diff.twist.angular.x<<" "<<state_.pose_diff.twist.angular.y<<" "<<state_.pose_diff.twist.angular.z<<std::endl;
 */
 	//LOOP
-	std::cout<<"GRID ANALYSER: Loop NewState"<<std::endl;
+	//std::cout<<"GRID ANALYSER: Loop NewState"<<std::endl;
 	float x_now=state_.pose.pose.position.x;
 	float y_now=state_.pose.pose.position.y;
 	float x_path=path_.poses[state_.current_arrayposition].pose.position.x;
@@ -121,7 +112,7 @@ if(jumper_==true)
 	//LOOP
 
 	//Calc tracking error.
-	std::cout<<"GRID ANALYSER: Loop NewGrid"<<std::endl;
+	//std::cout<<"GRID ANALYSER: Loop NewGrid"<<std::endl;
 	float x_now=state_.pose.pose.position.x;
 	float y_now=state_.pose.pose.position.y;
 	float x_path=path_.poses[state_.current_arrayposition].pose.position.x;
@@ -274,15 +265,15 @@ geometry_msgs::Point N;
 //WHATTODO
 void gridAnalyser::whattodo(const int i)
 {	
-	std::cout<<"Index: "<<i<<std::endl;
+	//std::cout<<"Index: "<<i<<std::endl;
 	geometry_msgs::Vector3 p=convertIndex(i);
-	std::cout<<"Coordiantes: "<<p.x<<" "<<p.y<<std::endl;
+	//std::cout<<"Coordiantes: "<<p.x<<" "<<p.y<<std::endl;
 	float d=sqrt(pow(p.x-height_/2,2)+pow(-p.y-width_/2,2))*resolution_;	//Objektdistanz bezüglich gridMittelpunkt	
 	obstacle_distance_=d;
-	std::cout<<"Distance: "<<d<<std::endl;
+	//std::cout<<"Distance: "<<d<<std::endl;
 
 
-	std::cout<<"Braking distance of v=  "<<state_.pose_diff<<" is: "<<braking_distance_<<std::endl;
+	//std::cout<<"Braking distance of v=  "<<state_.pose_diff<<" is: "<<braking_distance_<<std::endl;
 		if(d<braking_distance_)
 		{
 			crit_counter_++;
