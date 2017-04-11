@@ -2,12 +2,12 @@
 
 float QUEUE_LENGTH=10;
 float FOS_DANGERGRID=1;
-float FOS_BRAKING_DISTANCE=2;
+float FOS_BRAKING_DISTANCE=10;
 float TOTAL_WIDTH=1.6;
 float DISTANCE_LASER_REAR_AXIS=1;
-float NUMBER_OF_EMERGENCY_CELLS=5;
+float NUMBER_OF_EMERGENCY_CELLS=2;	//number of times a cell in less than braking dist has to appear in order to actuate a notstop.
 float CRITICAL_OBSTACLE_DISTANCE=2;
-float LENGHT_CORRECTION_PATH_GRIDANALYSER=3;
+float LENGHT_CORRECTION_PATH_GRIDANALYSER=3;	//for displacement of inflated path
 float K1_LAD_LASER=2;
 float K2_LAD_LASER=5;
 std::string STOP_LASER_TOPIC="laser_stop";
@@ -36,8 +36,8 @@ gridAnalyser::gridAnalyser(const ros::NodeHandle &nh): nh_(nh)
 	nh.getParam("/control/K1_LAD_LASER",K1_LAD_LASER);
 	nh.getParam("/control/K2_LAD_LASER",K2_LAD_LASER);
 
-
-	state_.pose.pose.position.x=0;
+	//Initialisation.
+/*	state_.pose.pose.position.x=0;
 	state_.pose.pose.position.y=0;
 	state_.pose.pose.position.z=0;
 	state_.pose.pose.orientation.x=0;
@@ -52,17 +52,19 @@ gridAnalyser::gridAnalyser(const ros::NodeHandle &nh): nh_(nh)
 	width_=120;
 	height_=400;
 	resolution_=0.1;
-
-	jumper_=true;
-
+*/
+	jumper_=true;	//Variabel that gives alternation btw state and grid callback functions
+	grid_init_=false;
+	state_init_=false;
 	//Publsiher. 
 	stop_pub_=nh_.advertise<std_msgs::Bool>(STOP_LASER_TOPIC,QUEUE_LENGTH);
 	distance_to_obstacle_pub_=nh_.advertise<std_msgs::Float64>(OBSTACLE_DISTANCE_TOPIC,QUEUE_LENGTH);
 	danger_pub_=nh_.advertise<nav_msgs::OccupancyGrid>(DANGER_GRID_TOPIC,QUEUE_LENGTH);			//to visualize danger zone with rviz
 	//Subscriber.
 	grid_map_sub_=nh_.subscribe(OBSTACLE_MAP_TOPIC, QUEUE_LENGTH, &gridAnalyser::getGridMap, this);
+	state_sub_=nh_.subscribe(STATE_TOPIC, QUEUE_LENGTH, &gridAnalyser::getState, this);
 	//Read path.
-	readPathFromTxt("/home/moritz/.ros/Paths/ObstacleDetection1_teach.txt");
+	readPathFromTxt("/home/moritz/.ros/Paths/ObstacleDetection_teach.txt");
 	std::cout<<"GRID ANALYSER: Constructor"<<std::endl;
 }
 
@@ -93,12 +95,16 @@ std::cout<<"Angular velocities: "<<state_.pose_diff.twist.angular.x<<" "<<state_
 	float y_now=state_.pose.pose.position.y;
 	float x_path=path_.poses[state_.current_arrayposition].pose.position.x;
 	float y_path=path_.poses[state_.current_arrayposition].pose.position.y;
-	tracking_error_=sqrt(pow((x_now-x_path),2)+pow((y_now-y_path),2));
-	braking_distance_=pow(state_.pose_diff*3.6/10,2)/2*FOS_BRAKING_DISTANCE;	//Bremsweg mit Sicherheitsfaktor (FOS_BRAKING_DISTANCE) Gleichung aus internet
-	createDangerZone (nico_map_);
-	compareGrids();
-	publish_all();
-	//END LOOP
+//	tracking_error_=sqrt(pow((x_now-x_path),2)+pow((y_now-y_path),2));		//welcher tracking error besser?
+	tracking_error_=fabs(arc_tools::globalToLocal(path_.poses[state_.current_arrayposition-1].pose.position,state_).y);
+	braking_distance_=pow(state_.pose_diff*3.6/10,2)/2*FOS_BRAKING_DISTANCE;	//Bremsweg mit Sicherheitsfaktor Gleichung aus internet
+	state_init_=true;
+	if(grid_init_==true&&state_init_==true)
+	{
+		createDangerZone (nico_map_);
+		compareGrids();
+		publish_all();
+	}
 	jumper_=true;
 }
 }
@@ -108,7 +114,6 @@ void gridAnalyser::getGridMap(const nav_msgs::OccupancyGrid::ConstPtr& grid_map)
 if(jumper_==true)
 {
 	nico_map_=*grid_map;
-	state_sub_=nh_.subscribe(STATE_TOPIC, QUEUE_LENGTH, &gridAnalyser::getState, this);	//Definierung state subscriber damit erstwe callback immer gridmap ist
 	//LOOP
 
 	//Calc tracking error.
@@ -117,19 +122,20 @@ if(jumper_==true)
 	float y_now=state_.pose.pose.position.y;
 	float x_path=path_.poses[state_.current_arrayposition].pose.position.x;
 	float y_path=path_.poses[state_.current_arrayposition].pose.position.y;
-	tracking_error_=sqrt(pow((x_now-x_path),2)+pow((y_now-y_path),2));
+	tracking_error_=fabs(arc_tools::globalToLocal(path_.poses[state_.current_arrayposition-1].pose.position,state_).y);
 	//Jetzt lateral error selber berechnet und ist noch Fehler HINTERACHSE
 
 	n_cells_=nico_map_.info.height*nico_map_.info.width;	//Easy access to this parameter
 	width_=grid_map->info.width;					//Easy access to this parameter
 	height_=grid_map->info.height;				//Easy access to this parameter
 	resolution_=grid_map->info.resolution; 			//Easy access to this parameter
-	//Really neccessary steps	
-	createDangerZone (nico_map_);
-	compareGrids();
-	publish_all();
-	//END LOOP
-	//path_pub_.publish(path_);
+	grid_init_=true;
+	if(grid_init_==true&&state_init_==true)
+	{
+		createDangerZone (nico_map_);
+		compareGrids();
+		publish_all();
+	}
 	jumper_=false;
 }
 }
@@ -139,7 +145,7 @@ void gridAnalyser::createDangerZone (const nav_msgs::OccupancyGrid grid_map)
 	tube_map_=grid_map;
 	for (int i=0;i<n_cells_;i++) tube_map_.data[i]=0;
 	//Inflate path
-	for(int i=state_.current_arrayposition; i<indexOfDistanceFront(state_.current_arrayposition,K2_LAD_LASER+K1_LAD_LASER*braking_distance_); i++) inflate(gridIndexOfGlobalPoint(path_.poses[i].pose.position));
+	for(int i=state_.current_arrayposition; i<indexOfDistanceFront(state_.current_arrayposition,5); i++) inflate(gridIndexOfGlobalPoint(path_.poses[i].pose.position));	//statt 5 : state_.current_arrayposition,K2_LAD_LASER+K1_LAD_LASER*braking_distance_
 }
 
 //INFLATE XY----------------------------------------------------------------------------------------------------------------------------
@@ -147,14 +153,14 @@ void gridAnalyser::inflate(int x, int y)
 {	
 	//Displace less and less with increasing distance
 	float distance=sqrt( pow(y+(width_/2.0),2) + pow(x-(height_/2.0),2) )*resolution_; 
-	float displacement=tracking_error_*(1-distance/LENGHT_CORRECTION_PATH_GRIDANALYSER);
-	if(distance>LENGHT_CORRECTION_PATH_GRIDANALYSER) displacement=0;
+	float displacement=tracking_error_*(1-distance/LENGHT_CORRECTION_PATH_GRIDANALYSER);	//max(tracking_error_*(1-distance/LENGHT_CORRECTION_PATH_GRIDANALYSER),0);
+	if (displacement<0) displacement=0;
 	if(displacement!=0)
 	{
 		bool left=false;
 		if ( arc_tools::globalToLocal(path_.poses[state_.current_arrayposition].pose.position,state_).y >=0) left=true;
-		if (left) y-=round(tracking_error_*resolution_);
-		else y+=round(tracking_error_*resolution_);
+		if (left) y-=round(displacement/resolution_);
+		else y+=round(displacement/resolution_);
 	}
 	//Choose radius
 	float Radius_float=((TOTAL_WIDTH/2)*FOS_DANGERGRID);
@@ -172,7 +178,7 @@ void gridAnalyser::inflate(int x, int y)
 			{	
 				//calculates dinstance squared between (i, j) and (x, y).
 				float d=(((x-i)*(x-i))+((y-j)*(y-j)));
-				if((i>0) && (i<height_) && (j<0) && j>-width_ && (d<(R*R)))				//Wieso Klammern??
+				if((i>0) && (i<height_) && (j<0) && j>-width_ && (d<(R*R)))
 				{
 					//If (i, j) is on the map and the distance to (x,y) is smaller than the defined.
 					tube_map_.data[convertIndex(i, j)]=100;
@@ -242,6 +248,7 @@ geometry_msgs::Vector3 gridAnalyser::convertIndex(const int i)
 	geometry_msgs::Vector3 p;
 	p.x=x[0];
 	p.y=x[1];
+	p.z=0;
 	return p;
 }
 
@@ -268,13 +275,12 @@ void gridAnalyser::whattodo(const int i)
 	//std::cout<<"Index: "<<i<<std::endl;
 	geometry_msgs::Vector3 p=convertIndex(i);
 	//std::cout<<"Coordiantes: "<<p.x<<" "<<p.y<<std::endl;
-	float d=sqrt(pow(p.x-height_/2,2)+pow(-p.y-width_/2,2))*resolution_;	//Objektdistanz bezüglich gridMittelpunkt	
-	obstacle_distance_=d;
+	obstacle_distance_=sqrt(pow(p.x-height_/2,2)+pow(-p.y-width_/2,2))*resolution_;	//Objektdistanz bezüglich gridMittelpunkt	
 	//std::cout<<"Distance: "<<d<<std::endl;
 
 
 	//std::cout<<"Braking distance of v=  "<<state_.pose_diff<<" is: "<<braking_distance_<<std::endl;
-		if(d<braking_distance_)
+		if(obstacle_distance_<braking_distance_)
 		{
 			crit_counter_++;
 			if(crit_counter_>=NUMBER_OF_EMERGENCY_CELLS)
@@ -306,7 +312,7 @@ stop_pub_.publish(stop_msg_);
 obstacle_distance_msg_.data=obstacle_distance_;
 distance_to_obstacle_pub_.publish(obstacle_distance_msg_);
 
-danger_pub_.publish(tube_map_);
+danger_pub_.publish(tube_map_);	//Only for visualisation rviz.
 }
 
 //READPATH

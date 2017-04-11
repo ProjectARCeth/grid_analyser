@@ -95,6 +95,9 @@ ros::Publisher path_pub_;
 	int crit_counter_;
 	//Bool that decides if state or grid callback is executed
 	bool jumper_;
+	//Bools so that state and grid are initialized. if botj true we can stat analysing
+	bool state_init_;
+	bool grid_init_;
 	//Braking velocity
 	float braking_distance_;
 	
