@@ -100,5 +100,7 @@ ros::Publisher path_pub_;
 	bool grid_init_;
 	//Braking velocity
 	float braking_distance_;
+	//Diastance of obstacle to actuate emergency stop.
+	float emergency_distance_;
 	
 };

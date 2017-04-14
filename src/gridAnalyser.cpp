@@ -5,11 +5,14 @@ float FOS_DANGERGRID=1;
 float FOS_BRAKING_DISTANCE=10;
 float TOTAL_WIDTH=1.6;
 float DISTANCE_LASER_REAR_AXIS=1;
+float DISTANCE_FRONT_TO_REAR_AXIS=3;
 float NUMBER_OF_EMERGENCY_CELLS=2;	//number of times a cell in less than braking dist has to appear in order to actuate a notstop.
 float CRITICAL_OBSTACLE_DISTANCE=2;
 float LENGHT_CORRECTION_PATH_GRIDANALYSER=3;	//for displacement of inflated path
 float K1_LAD_LASER=2;
 float K2_LAD_LASER=5;
+float EMERGENCY_DISTANCE_LB=1;	//To test empirically
+float EMERGENCY_DISTANCE_UB=6;	//To test empirically
 std::string STOP_LASER_TOPIC="laser_stop";
 std::string STATE_TOPIC="state";
 std::string OBSTACLE_MAP_TOPIC="gridmap";
@@ -20,6 +23,9 @@ std::string OBSTACLE_DISTANCE_TOPIC="distance_to_obstacle";
 //Constructor
 gridAnalyser::gridAnalyser(const ros::NodeHandle &nh): nh_(nh)
 {
+	nh.getParam("/control/EMERGENCY_DISTANCE_LB",EMERGENCY_DISTANCE_LB);
+	nh.getParam("/control/EMERGENCY_DISTANCE_UB",EMERGENCY_DISTANCE_UB);	
+	nh.getParam("/erod/DISTANCE_FRONT_TO_REAR_AXIS",DISTANCE_FRONT_TO_REAR_AXIS);	
 	nh.getParam("/control/LENGHT_CORRECTION_PATH_GRIDANALYSER",LENGHT_CORRECTION_PATH_GRIDANALYSER);
 	nh.getParam("/control/NUMBER_OF_EMERGENCY_CELLS",NUMBER_OF_EMERGENCY_CELLS);
 	nh.getParam("/general/QUEUE_LENGTH",QUEUE_LENGTH);
@@ -82,22 +88,15 @@ std::cout<<"Angular velocities: "<<arc_state->pose_diff.twist.angular.x<<" "<<ar
 
 
 	state_=*arc_state;
-	//arc_msgs::State state=state_;
-/*
-std::cout<<"Position: "<<state_.pose.pose.position.x<<" "<<state_.pose.pose.position.y<<" "<<state_.pose.pose.position.z<<std::endl;
-std::cout<<"Quatrnions: "<<state_.pose.pose.orientation.x<<" "<<state_.pose.pose.orientation.y<<" "<<state_.pose.pose.orientation.z<<" "<<state_.pose.pose.orientation.w<<std::endl;
-std::cout<<"Velocities: "<<state_.pose_diff.twist.linear.x<<" "<<state_.pose_diff.twist.linear.y<<" "<<state_.pose_diff.twist.linear.z<<std::endl;
-std::cout<<"Angular velocities: "<<state_.pose_diff.twist.angular.x<<" "<<state_.pose_diff.twist.angular.y<<" "<<state_.pose_diff.twist.angular.z<<std::endl;
-*/
 	//LOOP
-	//std::cout<<"GRID ANALYSER: Loop NewState"<<std::endl;
 	float x_now=state_.pose.pose.position.x;
 	float y_now=state_.pose.pose.position.y;
 	float x_path=path_.poses[state_.current_arrayposition].pose.position.x;
 	float y_path=path_.poses[state_.current_arrayposition].pose.position.y;
-//	tracking_error_=sqrt(pow((x_now-x_path),2)+pow((y_now-y_path),2));		//welcher tracking error besser?
 	tracking_error_=fabs(arc_tools::globalToLocal(path_.poses[state_.current_arrayposition-1].pose.position,state_).y);
-	braking_distance_=pow(state_.pose_diff*3.6/10,2)/2*FOS_BRAKING_DISTANCE;	//Bremsweg mit Sicherheitsfaktor Gleichung aus internet
+	braking_distance_=pow(state_.pose_diff*3.6/10,2)/2*FOS_BRAKING_DISTANCE;	//Bremsweg empyrisch zu ermitteln
+	emergency_distance_=std::max(EMERGENCY_DISTANCE_LB,braking_distance_);
+	emergency_distance_=std::min(EMERGENCY_DISTANCE_UB,braking_distance_);
 	state_init_=true;
 	if(grid_init_==true&&state_init_==true)
 	{
@@ -163,12 +162,7 @@ void gridAnalyser::inflate(int x, int y)
 		else y+=round(displacement/resolution_);
 	}
 	//Choose radius
-	float Radius_float=((TOTAL_WIDTH/2)*FOS_DANGERGRID);
-	//Adapt radius
-/*	if(distance>braking_distance_&&distance<=2*braking_distance_) Radius_float*=1.5-0.5*distance/braking_distance_;
-	if(distance>2*braking_distance_) Radius_float*=0.5;
-	if(distance<=CRITICAL_OBSTACLE_DISTANCE) Radius_float=((TOTAL_WIDTH/2+tracking_error_/3)*FOS_DANGERGRID)/resolution_;
-*/
+	float Radius_float=((TOTAL_WIDTH/2)*FOS_DANGERGRID)+tracking_error_;	//Radius constant over tube.
 	if((x>0) && x<height_ && y<0 && (y>-width_))
 	{	
 		int R=round(Radius_float)/resolution_;
@@ -206,14 +200,7 @@ void gridAnalyser::compareGrids()
 		if ((a!=0)&&(b!=0))
 		{	counter++;				//Counts matching cells.
 			geometry_msgs::Vector3 p=convertIndex(i);
-	//		std::cout<<"compareGrid coordinates: "<<p.x<<" "<<p.y<<" "<<width_<<" "<<height_<<" "<<resolution_<<std::endl;
-	//		std::cout<<"compareGrid coordinates: "<<p.x<<" "<<p.y<<" "<<width_<<" "<<height_<<" "<<resolution_<<std::endl;
-	//		int c=p[1];//+(width_/2.0);
-	//		int d=*p;//-(height_/2.0);
-	//		std::cout<<"c"<<c<<" d "<<d<<std::endl;
-//			float distance_new=sqrt( pow(a,2) + pow(b,2) )*resolution_;
-			float distance_new=sqrt( pow(p.y+(width_/2.0),2) + pow(p.x-(height_/2.0),2) )*resolution_;		//Objektdistanz bezüglich gridMittelpunkt	
-	//		std::cout<<"compareGrid new_distance: "<<distance_new<<std::endl;		
+			float distance_new=sqrt( pow(p.y+(width_/2.0),2) + pow(p.x-(height_/2.0),2) )*resolution_;		//Objektdistanz bezüglich gridMittelpunkt			
 			if (distance_new<distance_old)
 			{
 				distance_old=distance_new;
@@ -275,23 +262,19 @@ void gridAnalyser::whattodo(const int i)
 	//std::cout<<"Index: "<<i<<std::endl;
 	geometry_msgs::Vector3 p=convertIndex(i);
 	//std::cout<<"Coordiantes: "<<p.x<<" "<<p.y<<std::endl;
-	obstacle_distance_=sqrt(pow(p.x-height_/2,2)+pow(-p.y-width_/2,2))*resolution_;	//Objektdistanz bezüglich gridMittelpunkt	
-	//std::cout<<"Distance: "<<d<<std::endl;
-
-
-	//std::cout<<"Braking distance of v=  "<<state_.pose_diff<<" is: "<<braking_distance_<<std::endl;
-		if(obstacle_distance_<braking_distance_)
+	obstacle_distance_=sqrt(pow(p.x-height_/2,2)+pow(-p.y-width_/2,2))*resolution_+DISTANCE_FRONT_TO_REAR_AXIS;	//Object diastance to forntest point of car.	
+		if(obstacle_distance_<emergency_distance_)
 		{
 			crit_counter_++;
 			if(crit_counter_>=NUMBER_OF_EMERGENCY_CELLS)
 			{
-				std::cout<<"GRID ANALYSER: NOTSTOPP! Hindernis in Bremsweg"<<std::endl;
+				std::cout<<"GRID ANALYSER: NOTSTOPP!"<<std::endl;
 				stop_=1;
 			}
 			else
 			{
 				stop_=0;
-				std::cout<<"GRID ANALYSER: LANGSAMER! Counter bei "<<crit_counter_<<std::endl;
+				std::cout<<"GRID ANALYSER: crit_counter bei "<<crit_counter_<<std::endl;
 			}
 			
 		}
@@ -299,7 +282,7 @@ void gridAnalyser::whattodo(const int i)
 		{	
 			crit_counter_=0;
 			stop_=0;
-			std::cout<<"GRID ANALYSER: LANGSAMER! Doch noch nicht Not"<<std::endl;
+			std::cout<<"GRID ANALYSER: LANGSAMER!"<<std::endl;
 		}
 }
 
