@@ -18,10 +18,11 @@ std::string STATE_TOPIC="state";
 std::string OBSTACLE_MAP_TOPIC="gridmap";
 std::string DANGER_GRID_TOPIC="danger_grid";
 std::string OBSTACLE_DISTANCE_TOPIC="distance_to_obstacle";
+std::string  PATH_NAME_EDITED;
 
 
 //Constructor
-gridAnalyser::gridAnalyser(const ros::NodeHandle &nh): nh_(nh)
+gridAnalyser::gridAnalyser(const ros::NodeHandle &nh,std::string PATH_NAME): nh_(nh)
 {
 	nh.getParam("/control/EMERGENCY_DISTANCE_LB",EMERGENCY_DISTANCE_LB);
 	nh.getParam("/control/EMERGENCY_DISTANCE_UB",EMERGENCY_DISTANCE_UB);	
@@ -41,6 +42,7 @@ gridAnalyser::gridAnalyser(const ros::NodeHandle &nh): nh_(nh)
 	nh.getParam("/topic/LASER_STOP",STOP_LASER_TOPIC);
 	nh.getParam("/control/K1_LAD_LASER",K1_LAD_LASER);
 	nh.getParam("/control/K2_LAD_LASER",K2_LAD_LASER);
+	PATH_NAME_EDITED = PATH_NAME + "_teach.txt";
 
 	//Initialisation.
 /*	state_.pose.pose.position.x=0;
@@ -70,7 +72,7 @@ gridAnalyser::gridAnalyser(const ros::NodeHandle &nh): nh_(nh)
 	grid_map_sub_=nh_.subscribe(OBSTACLE_MAP_TOPIC, QUEUE_LENGTH, &gridAnalyser::getGridMap, this);
 	state_sub_=nh_.subscribe(STATE_TOPIC, QUEUE_LENGTH, &gridAnalyser::getState, this);
 	//Read path.
-	readPathFromTxt("/home/moritz/.ros/Paths/ObstacleDetection_teach.txt");
+	readPathFromTxt(PATH_NAME_EDITED);
 	std::cout<<"GRID ANALYSER: Constructor"<<std::endl;
 }
 
@@ -79,14 +81,6 @@ void gridAnalyser::getState (const arc_msgs::State::ConstPtr& arc_state)
 {
 if(jumper_==false)
 {
-/*
-std::cout<<"Position: "<<_state->pose.pose.position.x<<" "<<arc_state->pose.pose.position.y<<" "<<arc_state->pose.pose.position.z<<std::endl;
-std::cout<<"Quatrnions: "<<arc_state->pose.pose.orientation.x<<" "<<arc_state->pose.pose.orientation.y<<" "<<arc_state->pose.pose.orientation.z<<" "<<arc_state->pose.pose.orientation.w<<std::endl;
-std::cout<<"Velocities: "<<arc_state->pose_diff.twist.linear.x<<" "<<arc_state->pose_diff.twist.linear.y<<" "<<arc_state->pose_diff.twist.linear.z<<std::endl;
-std::cout<<"Angular velocities: "<<arc_state->pose_diff.twist.angular.x<<" "<<arc_state->pose_diff.twist.angular.y<<" "<<arc_state->pose_diff.twist.angular.z<<std::endl;
-*/
-
-
 	state_=*arc_state;
 	//LOOP
 	float x_now=state_.pose.pose.position.x;
@@ -114,9 +108,6 @@ if(jumper_==true)
 {
 	nico_map_=*grid_map;
 	//LOOP
-
-	//Calc tracking error.
-	//std::cout<<"GRID ANALYSER: Loop NewGrid"<<std::endl;
 	float x_now=state_.pose.pose.position.x;
 	float y_now=state_.pose.pose.position.y;
 	float x_path=path_.poses[state_.current_arrayposition].pose.position.x;
@@ -147,13 +138,12 @@ void gridAnalyser::createDangerZone (const nav_msgs::OccupancyGrid grid_map)
 	for(int i=state_.current_arrayposition; i<indexOfDistanceFront(state_.current_arrayposition,5); i++) inflate(gridIndexOfGlobalPoint(path_.poses[i].pose.position));	//statt 5 : state_.current_arrayposition,K2_LAD_LASER+K1_LAD_LASER*braking_distance_
 }
 
-//INFLATE XY----------------------------------------------------------------------------------------------------------------------------
+//INFLATE XY
 void gridAnalyser::inflate(int x, int y)
 {	
 	//Displace less and less with increasing distance
 	float distance=sqrt( pow(y+(width_/2.0),2) + pow(x-(height_/2.0),2) )*resolution_; 
-	float displacement=tracking_error_*(1-distance/LENGHT_CORRECTION_PATH_GRIDANALYSER);	//max(tracking_error_*(1-distance/LENGHT_CORRECTION_PATH_GRIDANALYSER),0);
-	if (displacement<0) displacement=0;
+	float displacement=std::max(tracking_error_*(1-distance/LENGHT_CORRECTION_PATH_GRIDANALYSER),float(0));//tracking_error_*(1-distance/LENGHT_CORRECTION_PATH_GRIDANALYSER);
 	if(displacement!=0)
 	{
 		bool left=false;
@@ -262,7 +252,7 @@ void gridAnalyser::whattodo(const int i)
 	//std::cout<<"Index: "<<i<<std::endl;
 	geometry_msgs::Vector3 p=convertIndex(i);
 	//std::cout<<"Coordiantes: "<<p.x<<" "<<p.y<<std::endl;
-	obstacle_distance_=sqrt(pow(p.x-height_/2,2)+pow(-p.y-width_/2,2))*resolution_+DISTANCE_FRONT_TO_REAR_AXIS;	//Object diastance to forntest point of car.	
+	obstacle_distance_=sqrt(pow(p.x-height_/2,2)+pow(-p.y-width_/2,2))*resolution_-DISTANCE_FRONT_TO_REAR_AXIS;	//Object diastance to forntest point of car.	
 		if(obstacle_distance_<emergency_distance_)
 		{
 			crit_counter_++;
@@ -334,40 +324,6 @@ void gridAnalyser::readPathFromTxt(std::string inFileName)
 
 }
 
-geometry_msgs::Point gridAnalyser::GlobalToLocal(geometry_msgs::Point global)
-{
-	//Translatation
-	Eigen::Vector3d glob=arc_tools::transformPointMessageToEigen(global);
-	Eigen::Vector3d stat= arc_tools::transformPointMessageToEigen(state_.pose.pose.position);
-	Eigen::Vector3d temp=glob-stat;
-	//Rotation
-	Eigen::Vector4d quat=arc_tools::transformQuatMessageToEigen(state_.pose.pose.orientation);
-	Eigen::Vector3d euler=arc_tools::transformEulerQuaternionVector(quat);
-	Eigen::Matrix3d R=arc_tools::getRotationMatrix(euler);
-	Eigen::Matrix3d T=R.transpose();
-	Eigen::Vector3d local=T*temp;
-	geometry_msgs::Point local_msg=arc_tools::transformEigenToPointMessage(local);
-	return local_msg;
-}
-/*
-arc_msgs::State gridAnalyser::arc_tools::generate2DState(const float x, const float y, const float alpha )
-{
-	arc_msgs::State state;
-	state.pose.pose.position.x=x;
-	state.pose.pose.position.y=y;
-	geometry_msgs::Vector3 eu;
-	eu.x=0;
-	eu.y=0;
-	eu.z=alpha;
-	geometry_msgs::Quaternion quat;
-	quat=arc_tools::transformQuaternionEulerMsg(eu);
-	state.pose.pose.orientation=quat;
-	return state;
-
-}
-
-*/
-
 int gridAnalyser::indexOfDistanceFront(int i, float d)
 {
 	int j=i;
@@ -383,11 +339,5 @@ int gridAnalyser::indexOfDistanceFront(int i, float d)
 	return j+1;
 }
 
-float gridAnalyser::radiusOfInflation(int x, int y)
-{
-	float radius;
-
-	return radius;
-}
 
 

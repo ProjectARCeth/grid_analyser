@@ -10,11 +10,12 @@
 #include <sstream>
 #include"arc_tools/coordinate_transform.hpp"
 #include "geometry_msgs/Transform.h"
+#include <algorithm>
 class gridAnalyser
 {
 public:
 	//Constructor.
-	gridAnalyser(const ros::NodeHandle &nh);
+	gridAnalyser(const ros::NodeHandle &nh, std::string PATH_NAME);
 	//Function which saves the incoming state.
 	void getState (const arc_msgs::State::ConstPtr& arc_state);
 	//Function which saves the incoming occupancy map.
@@ -32,8 +33,6 @@ public:
 	void inflate(int n);
 	//Funktion that projects a global point in the local system (grid index)
 	int gridIndexOfGlobalPoint(geometry_msgs::Point P);
-	//globalpoint to local point
-	geometry_msgs::Point GlobalToLocal(geometry_msgs::Point global);
 	//Function that calculates grid coordinates from index
 	geometry_msgs::Vector3 convertIndex(const int i);
 	//Comparison of NicoMap and dangerzone
@@ -45,7 +44,6 @@ public:
 	//generates 2dimeensional state from posirion and orientation
 	//	arc_msgs::State generate2DState(const float x, const float y, const float alpha );
 	int indexOfDistanceFront(int i, float d);
-	float radiusOfInflation(int x, int y);
 	
 private:
 	//Ros-Constants:.
