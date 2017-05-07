@@ -182,7 +182,7 @@ void gridAnalyser::inflate(int n)
 void gridAnalyser::compareGrids()
 {	int counter=0;
 	int j=0;
-	int distance_old=100;
+	float distance_old=100;
 	for(int i=0; i<n_cells_; i++)
 	{	
 		int a=tube_map_.data[i];
@@ -201,7 +201,7 @@ void gridAnalyser::compareGrids()
 
 	if (counter!=0)		//Falls es minestens eine grid Zelle gibt, die obstacle enthält UND im gefahrbereich ist
 	{
-		std::cout<<"GRID ANALYSER: Etwas auf dem Weg!"<<std::endl;
+		std::cout<<"GRID ANALYSER: Etwas bei "<<distance_old<<" Meter "<<std::endl;
 		whattodo(j);
 	}
 	else 
@@ -233,7 +233,7 @@ int gridAnalyser::gridIndexOfGlobalPoint(geometry_msgs::Point P)	//Global Point 
 {	
 
 geometry_msgs::Point N;
-	int n=-1;		//Damit wenn es geändert wird gut, ansonsten wird in späteren schritten n=-1 durch die if eliminiert
+	int n=-100;		//Damit wenn es geändert wird gut, ansonsten wird in späteren schritten n=-1 durch die if eliminiert
 	geometry_msgs::Point local_msg=arc_tools::globalToLocal(P,state_);
 	float x_local=local_msg.x;	//Translation von Nico gemacht von Laser zu rearaxis 
 	float y_local=local_msg.y;
@@ -263,8 +263,8 @@ void gridAnalyser::whattodo(const int i)
 			}
 			else
 			{
-				stop_=0;
 				std::cout<<"GRID ANALYSER: crit_counter bei "<<crit_counter_<<std::endl;
+				stop_=0;
 			}
 			
 		}
