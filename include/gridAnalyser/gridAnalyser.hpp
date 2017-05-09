@@ -73,6 +73,8 @@ ros::Publisher path_pub_;
 	int width_;
 	//Variable to store the resolution. 
 	float resolution_;
+	//Variable to store actual velocity	
+	float v_abs_;
 	//Variable to store the Grid with inflated Tube around path.
 	nav_msgs::OccupancyGrid	tube_map_;
 	//Bool to store the stop (safe/unsafe). 

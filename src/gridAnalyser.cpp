@@ -89,6 +89,7 @@ if(jumper_==false)
 	float y_path=path_.poses[state_.current_arrayposition].pose.position.y;
 	tracking_error_=fabs(arc_tools::globalToLocal(path_.poses[state_.current_arrayposition-1].pose.position,state_).y);
 	braking_distance_=pow(state_.pose_diff*3.6/10,2)/2*FOS_BRAKING_DISTANCE;	//Bremsweg empyrisch zu ermitteln
+	v_abs_=state_.pose_diff;
 	emergency_distance_=std::max(EMERGENCY_DISTANCE_LB,braking_distance_);
 	emergency_distance_=std::min(EMERGENCY_DISTANCE_UB,braking_distance_);
 	state_init_=true;
@@ -135,7 +136,9 @@ void gridAnalyser::createDangerZone (const nav_msgs::OccupancyGrid grid_map)
 	tube_map_=grid_map;
 	for (int i=0;i<n_cells_;i++) tube_map_.data[i]=0;
 	//Inflate path
-	for(int i=state_.current_arrayposition; i<indexOfDistanceFront(state_.current_arrayposition,5); i++) inflate(gridIndexOfGlobalPoint(path_.poses[i].pose.position));	//statt 5 : state_.current_arrayposition,K2_LAD_LASER+K1_LAD_LASER*braking_distance_
+	float path_inflate_length= K2_LAD_LASER + K1_LAD_LASER * v_abs_;
+	int j=indexOfDistanceFront(state_.current_arrayposition,path_inflate_length);
+	for(int i=state_.current_arrayposition; i<j; i++) inflate(gridIndexOfGlobalPoint(path_.poses[i].pose.position));	
 }
 
 //INFLATE XY
@@ -152,7 +155,7 @@ void gridAnalyser::inflate(int x, int y)
 		else y+=round(displacement/resolution_);
 	}
 	//Choose radius
-	float Radius_float=((TOTAL_WIDTH/2)*FOS_DANGERGRID)+tracking_error_;	//Radius constant over tube.
+	float Radius_float=((TOTAL_WIDTH/2)*FOS_DANGERGRID)+tracking_error_/3;	//Radius constant over tube.
 	if((x>0) && x<height_ && y<0 && (y>-width_))
 	{	
 		int R=round(Radius_float)/resolution_;
@@ -233,7 +236,7 @@ int gridAnalyser::gridIndexOfGlobalPoint(geometry_msgs::Point P)	//Global Point 
 {	
 
 geometry_msgs::Point N;
-	int n=-100;		//Damit wenn es geändert wird gut, ansonsten wird in späteren schritten n=-1 durch die if eliminiert
+	int n=-100;		//Damit wenn es geändert wird gut, ansonsten wird in späteren schritten n=10 durch die if eliminiert
 	geometry_msgs::Point local_msg=arc_tools::globalToLocal(P,state_);
 	float x_local=local_msg.x;	//Translation von Nico gemacht von Laser zu rearaxis 
 	float y_local=local_msg.y;
@@ -249,9 +252,7 @@ geometry_msgs::Point N;
 //WHATTODO
 void gridAnalyser::whattodo(const int i)
 {	
-	//std::cout<<"Index: "<<i<<std::endl;
 	geometry_msgs::Vector3 p=convertIndex(i);
-	//std::cout<<"Coordiantes: "<<p.x<<" "<<p.y<<std::endl;
 	obstacle_distance_=sqrt(pow(p.x-height_/2,2)+pow(-p.y-width_/2,2))*resolution_-DISTANCE_FRONT_TO_REAR_AXIS;	//Object diastance to forntest point of car.	
 		if(obstacle_distance_<emergency_distance_)
 		{
