@@ -92,6 +92,8 @@ if(jumper_==false)
 	v_abs_=state_.pose_diff;
 	emergency_distance_=std::max(EMERGENCY_DISTANCE_LB,braking_distance_);
 	emergency_distance_=std::min(EMERGENCY_DISTANCE_UB,braking_distance_);
+	emergency_distance_=EMERGENCY_DISTANCE_LB;
+std::cout<<"emergency_distance_"<<emergency_distance_<<std::endl;
 	state_init_=true;
 	if(grid_init_==true&&state_init_==true)
 	{
