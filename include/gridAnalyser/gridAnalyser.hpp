@@ -8,7 +8,8 @@
 #include <iostream>
 #include <fstream>
 #include <sstream>
-#include"arc_tools/coordinate_transform.hpp"
+#include "arc_tools/coordinate_transform.hpp"
+#include "arc_tools/timing.hpp"
 #include "geometry_msgs/Transform.h"
 #include <algorithm>
 class gridAnalyser
@@ -41,10 +42,8 @@ public:
 	void whattodo(const int i);
 	//Publishes all 
 	void publish_all();
-	//generates 2dimeensional state from posirion and orientation
-	//	arc_msgs::State generate2DState(const float x, const float y, const float alpha );
 	int indexOfDistanceFront(int i, float d);
-	
+	void takeTime();	
 private:
 	//Ros-Constants:.
 	//NodeHandle.
@@ -102,5 +101,7 @@ ros::Publisher path_pub_;
 	float braking_distance_;
 	//Diastance of obstacle to actuate emergency stop.
 	float emergency_distance_;
+	//Timer
+	arc_tools::Clock BigBen_;
 	
 };

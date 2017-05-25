@@ -13,6 +13,7 @@ float K1_LAD_LASER=2;
 float K2_LAD_LASER=5;
 float EMERGENCY_DISTANCE_LB=1;	//To test empirically
 float EMERGENCY_DISTANCE_UB=6;	//To test empirically
+float OBSTACLE_DISTANCE_HOLD_TIME=2;
 std::string STOP_LASER_TOPIC="laser_stop";
 std::string STATE_TOPIC="state";
 std::string OBSTACLE_MAP_TOPIC="gridmap";
@@ -209,6 +210,10 @@ void gridAnalyser::compareGrids()
 	}
 	else 
 	{	
+		if(obstacle_distance_<99)	//i.e. if in grid before we where going through obstacle
+		{
+			takeTime();
+		}
 		crit_counter_=0;
 		stop_=0;
 		obstacle_distance_=100;
@@ -253,28 +258,30 @@ geometry_msgs::Point N;
 void gridAnalyser::whattodo(const int i)
 {	
 	geometry_msgs::Vector3 p=convertIndex(i);
-	obstacle_distance_=sqrt(pow(p.x-height_/2,2)+pow(-p.y-width_/2,2))*resolution_-DISTANCE_FRONT_TO_REAR_AXIS;	//Object diastance to forntest point of car.	
-		if(obstacle_distance_<emergency_distance_)
+	float obstacle_distance_new=sqrt(pow(p.x-height_/2,2)+pow(-p.y-width_/2,2))*resolution_-DISTANCE_FRONT_TO_REAR_AXIS;	//Object diastance to forntest point of car.
+	if(obstacle_distance_new>obstacle_distance_+2) takeTime();		//If Object has went away, strange, wait and publish old distance
+	else obstacle_distance_=obstacle_distance_new;
+	if(obstacle_distance_<emergency_distance_)
+	{
+		crit_counter_++;
+		if(crit_counter_>=NUMBER_OF_EMERGENCY_CELLS)
 		{
-			crit_counter_++;
-			if(crit_counter_>=NUMBER_OF_EMERGENCY_CELLS)
-			{
-				std::cout<<"GRID ANALYSER: NOTSTOPP!"<<std::endl;
-				stop_=1;
-			}
-			else
-			{
-				std::cout<<"GRID ANALYSER: crit_counter bei "<<crit_counter_<<std::endl;
-				stop_=0;
-			}
-			
+			std::cout<<"GRID ANALYSER: NOTSTOPP!"<<std::endl;
+			stop_=1;
 		}
 		else
-		{	
-			crit_counter_=0;
+		{
+			std::cout<<"GRID ANALYSER: crit_counter bei "<<crit_counter_<<std::endl;
 			stop_=0;
-			std::cout<<"GRID ANALYSER: LANGSAMER!"<<std::endl;
 		}
+		
+	}
+	else
+	{	
+		crit_counter_=0;
+		stop_=0;
+		std::cout<<"GRID ANALYSER: LANGSAMER!"<<std::endl;
+	}
 }
 
 
@@ -340,5 +347,21 @@ int gridAnalyser::indexOfDistanceFront(int i, float d)
 	return j+1;
 }
 
+void gridAnalyser::takeTime()
+{	
+	float temp=obstacle_distance_;
+	BigBen_.start();
+	float rate=10;
+	ros::Rate r=rate;	//wird 5 mal pro sekunde publiziert
+	while(BigBen_.getTimeFromStart()<OBSTACLE_DISTANCE_HOLD_TIME)
+	{	
 
+		obstacle_distance_-=v_abs_/rate;
+		std::cout<<"Taking time: "<<BigBen_.getTimeFromStart()<<std::endl;
+		publish_all();
+		r.sleep();
+	}
+	std::cout<<"finished taking time "<<std::endl;
+	obstacle_distance_=temp;
+}
 
