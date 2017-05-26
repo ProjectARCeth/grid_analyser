@@ -65,6 +65,7 @@ gridAnalyser::gridAnalyser(const ros::NodeHandle &nh,std::string PATH_NAME): nh_
 	jumper_=true;	//Variabel that gives alternation btw state and grid callback functions
 	grid_init_=false;
 	state_init_=false;
+	obstacle_distance_=100;
 	//Publsiher. 
 	stop_pub_=nh_.advertise<std_msgs::Bool>(STOP_LASER_TOPIC,QUEUE_LENGTH);
 	distance_to_obstacle_pub_=nh_.advertise<std_msgs::Float64>(OBSTACLE_DISTANCE_TOPIC,QUEUE_LENGTH);
@@ -210,6 +211,7 @@ void gridAnalyser::compareGrids()
 	}
 	else 
 	{	
+		std::cout<<"last obst dist, now nothing"<<obstacle_distance_<<std::endl;
 		if(obstacle_distance_<99)	//i.e. if in grid before we where going through obstacle
 		{
 			takeTime();
@@ -259,7 +261,11 @@ void gridAnalyser::whattodo(const int i)
 {	
 	geometry_msgs::Vector3 p=convertIndex(i);
 	float obstacle_distance_new=sqrt(pow(p.x-height_/2,2)+pow(-p.y-width_/2,2))*resolution_-DISTANCE_FRONT_TO_REAR_AXIS;	//Object diastance to forntest point of car.
-	if(obstacle_distance_new>obstacle_distance_+2) takeTime();		//If Object has went away, strange, wait and publish old distance
+	if(obstacle_distance_new>obstacle_distance_+2)
+		{
+			std::cout<<"nico vaffanculo" <<std::endl;
+			takeTime();		//If Object has went away, strange, wait and publish old distance	
+		} 
 	else obstacle_distance_=obstacle_distance_new;
 	if(obstacle_distance_<emergency_distance_)
 	{
@@ -357,7 +363,8 @@ void gridAnalyser::takeTime()
 	{	
 
 		obstacle_distance_-=v_abs_/rate;
-		std::cout<<"Taking time: "<<BigBen_.getTimeFromStart()<<std::endl;
+
+		std::cout<<"Taking time: "<<BigBen_.getTimeFromStart()<<" With distance: "<<obstacle_distance_<<std::endl;
 		publish_all();
 		r.sleep();
 	}
