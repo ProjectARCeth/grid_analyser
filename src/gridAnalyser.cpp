@@ -14,6 +14,7 @@ float K2_LAD_LASER=5;
 float EMERGENCY_DISTANCE_LB=1;	//To test empirically
 float EMERGENCY_DISTANCE_UB=6;	//To test empirically
 float OBSTACLE_DISTANCE_HOLD_TIME=2;
+float ROLL_TIME=2;
 std::string STOP_LASER_TOPIC="laser_stop";
 std::string STATE_TOPIC="state";
 std::string OBSTACLE_MAP_TOPIC="gridmap";
@@ -66,6 +67,8 @@ gridAnalyser::gridAnalyser(const ros::NodeHandle &nh,std::string PATH_NAME): nh_
 	grid_init_=false;
 	state_init_=false;
 	obstacle_distance_=100;
+	big_ben_started_=false;
+	distance_manually_=false;
 	//Publsiher. 
 	stop_pub_=nh_.advertise<std_msgs::Bool>(STOP_LASER_TOPIC,QUEUE_LENGTH);
 	distance_to_obstacle_pub_=nh_.advertise<std_msgs::Float64>(OBSTACLE_DISTANCE_TOPIC,QUEUE_LENGTH);
@@ -93,7 +96,7 @@ if(jumper_==false)
 	braking_distance_=pow(state_.pose_diff*3.6/10,2)/2*FOS_BRAKING_DISTANCE;	//Bremsweg empyrisch zu ermitteln
 	v_abs_=state_.pose_diff;
 	emergency_distance_=std::max(EMERGENCY_DISTANCE_LB,braking_distance_);
-	emergency_distance_=std::min(EMERGENCY_DISTANCE_UB,braking_distance_);
+	emergency_distance_=std::min(EMERGENCY_DISTANCE_UB,emergency_distance_);
 	state_init_=true;
 	if(grid_init_==true&&state_init_==true)
 	{
@@ -211,14 +214,24 @@ void gridAnalyser::compareGrids()
 	}
 	else 
 	{	
-		std::cout<<"last obst dist, now nothing"<<obstacle_distance_<<std::endl;
-		if(obstacle_distance_<99)	//i.e. if in grid before we where going through obstacle
+		//std::cout<<"last obst dist, now nothing"<<obstacle_distance_<<std::endl;
+		if(distance_manually_==false && obstacle_distance_<12)	//i.e. if in grid before we where going through obstacle
 		{
 			takeTime();
 		}
 		crit_counter_=0;
 		stop_=0;
 		obstacle_distance_=100;
+		if(big_ben_started_ && BigBen2_.getTimeFromStart()>0 && BigBen2_.getTimeFromStart()<ROLL_TIME)
+		{	
+			obstacle_distance_=std::min(float(8.1), obstacle_distance_);
+			std::cout<<"!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!Rolling down. Time: "<<BigBen2_.getTimeFromStart()<<std::endl;
+			distance_manually_=true;
+		}
+		else
+		{
+			distance_manually_=false;
+		}
 	}	
 }	
 //CONVERT
@@ -261,12 +274,23 @@ void gridAnalyser::whattodo(const int i)
 {	
 	geometry_msgs::Vector3 p=convertIndex(i);
 	float obstacle_distance_new=sqrt(pow(p.x-height_/2,2)+pow(-p.y-width_/2,2))*resolution_-DISTANCE_FRONT_TO_REAR_AXIS;	//Object diastance to forntest point of car.
-	if(obstacle_distance_new>obstacle_distance_+2)
-		{
-			std::cout<<"nico vaffanculo" <<std::endl;
-			takeTime();		//If Object has went away, strange, wait and publish old distance	
-		} 
+	if(distance_manually_==false && obstacle_distance_new>obstacle_distance_+2)
+	{
+		takeTime();		//If Object has went away, strange, wait and publish old distance	
+	}
 	else obstacle_distance_=obstacle_distance_new;
+
+	if(big_ben_started_ && BigBen2_.getTimeFromStart()>0 && BigBen2_.getTimeFromStart()<ROLL_TIME)
+	{
+		obstacle_distance_=std::min(float(8.1),obstacle_distance_);
+		std::cout<<"!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!Rolling down. Time: "<<BigBen2_.getTimeFromStart()<<std::endl;
+		distance_manually_=true;
+	}
+	else
+	{
+			distance_manually_=false;
+	}
+
 	if(obstacle_distance_<emergency_distance_)
 	{
 		crit_counter_++;
@@ -347,7 +371,6 @@ int gridAnalyser::indexOfDistanceFront(int i, float d)
 		l += sqrt(	pow(path_.poses[j+1].pose.position.x - path_.poses[j].pose.position.x,2)+
 				pow(path_.poses[j+1].pose.position.y - path_.poses[j].pose.position.y,2)+
 				pow(path_.poses[j+1].pose.position.z - path_.poses[j].pose.position.z,2));
-		if(j+1>n_poses_path_-1){std::cout<<"PURE PURSUIT: LAUFZEITFEHLER::indexOfDistanceFront"<<std::endl;}
 		j ++;
 	}
 	return j+1;
@@ -368,7 +391,8 @@ void gridAnalyser::takeTime()
 		publish_all();
 		r.sleep();
 	}
-	std::cout<<"finished taking time "<<std::endl;
 	obstacle_distance_=temp;
+	BigBen2_.start();
+	big_ben_started_=true;
 }
 

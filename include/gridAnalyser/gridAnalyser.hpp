@@ -103,5 +103,7 @@ ros::Publisher path_pub_;
 	float emergency_distance_;
 	//Timer
 	arc_tools::Clock BigBen_;
-	
+	arc_tools::Clock BigBen2_;
+	bool big_ben_started_;
+	bool distance_manually_;
 };
