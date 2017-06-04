@@ -104,6 +104,7 @@ ros::Publisher path_pub_;
 	//Timer
 	arc_tools::Clock BigBen_;
 	arc_tools::Clock BigBen2_;
+	ros::Time begin_time_;
 	bool big_ben_started_;
 	bool distance_manually_;
 };

@@ -14,7 +14,7 @@ float K2_LAD_LASER=5;
 float EMERGENCY_DISTANCE_LB=1;	//To test empirically
 float EMERGENCY_DISTANCE_UB=6;	//To test empirically
 float OBSTACLE_DISTANCE_HOLD_TIME=2;
-float ROLL_TIME=2;
+float ROLL_TIME=4;
 std::string STOP_LASER_TOPIC="laser_stop";
 std::string STATE_TOPIC="state";
 std::string OBSTACLE_MAP_TOPIC="gridmap";
@@ -222,10 +222,13 @@ void gridAnalyser::compareGrids()
 		crit_counter_=0;
 		stop_=0;
 		obstacle_distance_=100;
-		if(big_ben_started_ && BigBen2_.getTimeFromStart()>0 && BigBen2_.getTimeFromStart()<ROLL_TIME)
+		//Rolling after TakeTime
+		float big_ben2=ros::Time::now().toSec()-begin_time_.toSec();
+		std::cout<<"big_ben2 time= "<<big_ben2<<"started bool"<<big_ben_started_<<std::endl;
+		if(big_ben_started_ && big_ben2>0 && big_ben2<ROLL_TIME)
 		{	
 			obstacle_distance_=std::min(float(8.1), obstacle_distance_);
-			std::cout<<"!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!Rolling down. Time: "<<BigBen2_.getTimeFromStart()<<std::endl;
+			std::cout<<"Rolling down. Time: "<<big_ben2<<std::endl;
 			distance_manually_=true;
 		}
 		else
@@ -279,18 +282,19 @@ void gridAnalyser::whattodo(const int i)
 		takeTime();		//If Object has went away, strange, wait and publish old distance	
 	}
 	else obstacle_distance_=obstacle_distance_new;
-
-	if(big_ben_started_ && BigBen2_.getTimeFromStart()>0 && BigBen2_.getTimeFromStart()<ROLL_TIME)
-	{
-		obstacle_distance_=std::min(float(8.1),obstacle_distance_);
-		std::cout<<"!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!Rolling down. Time: "<<BigBen2_.getTimeFromStart()<<std::endl;
+	//Rolling after Taketime
+	float  big_ben2=ros::Time::now().toSec()-begin_time_.toSec();
+	std::cout<<"big_ben2 time= "<<big_ben2<<"started bool"<<big_ben_started_<<std::endl;
+	if(big_ben_started_ && big_ben2>0 && big_ben2<ROLL_TIME)
+	{	
+		obstacle_distance_=std::min(float(8.1), obstacle_distance_);
+		std::cout<<"Rolling down. Time: "<<big_ben2<<std::endl;
 		distance_manually_=true;
 	}
 	else
 	{
-			distance_manually_=false;
+		distance_manually_=false;
 	}
-
 	if(obstacle_distance_<emergency_distance_)
 	{
 		crit_counter_++;
@@ -324,6 +328,7 @@ obstacle_distance_msg_.data=obstacle_distance_;
 distance_to_obstacle_pub_.publish(obstacle_distance_msg_);
 
 danger_pub_.publish(tube_map_);	//Only for visualisation rviz.
+std::cout<<"FINAL DISTANCE = "<<obstacle_distance_<<std::endl;
 }
 
 //READPATH
@@ -386,13 +391,12 @@ void gridAnalyser::takeTime()
 	{	
 
 		obstacle_distance_-=v_abs_/rate;
-
-		std::cout<<"Taking time: "<<BigBen_.getTimeFromStart()<<" With distance: "<<obstacle_distance_<<std::endl;
 		publish_all();
 		r.sleep();
 	}
 	obstacle_distance_=temp;
 	BigBen2_.start();
+	begin_time_ = ros::Time::now();
 	big_ben_started_=true;
 }
 
